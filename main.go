@@ -5,6 +5,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lexmodelbuildingservice"
+	"github.com/aws/aws-sdk-go/service/lexruntimeservice"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"net/http"
@@ -19,6 +20,7 @@ func main() {
 	r := gin.Default()
 	r.POST("/", createBot)
 	r.PUT("/", updateBot)
+	r.GET("/", chat)
 	r.Run()
 }
 
@@ -32,7 +34,7 @@ func createBot(ctx *gin.Context) {
 		ClarificationPrompts []string `json:"clarification_prompts"`
 	}{}
 	if err := ctx.Bind(&body); err != nil { //validation error
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "message": "Validation Error."})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "message": "Validation Error.", "data": nil})
 	} else {
 		cred := credentials.NewStaticCredentials(os.Getenv("ACCESS_KEY_ID"), os.Getenv("SECRET_ACCESS_KEY"), "")
 		config := aws.NewConfig().WithCredentials(cred).WithRegion(os.Getenv("AWS_REGION"))
@@ -60,7 +62,7 @@ func createBot(ctx *gin.Context) {
 			AbortStatement:      &lexmodelbuildingservice.Statement{Messages: abortMessages},
 		})
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error."})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error.", "data": nil})
 		} else {
 			_, err := svc.PutBotAlias(&lexmodelbuildingservice.PutBotAliasInput{
 				BotName:    aws.String(body.Name),
@@ -68,9 +70,9 @@ func createBot(ctx *gin.Context) {
 				Name:       aws.String(body.Name),
 			})
 			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error."})
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error.", "data": nil})
 			} else {
-				ctx.JSON(http.StatusOK, gin.H{"error": nil, "message": "New Bot Created."})
+				ctx.JSON(http.StatusOK, gin.H{"error": nil, "message": "New Bot Created.", "data": nil})
 			}
 		}
 	}
@@ -90,7 +92,7 @@ func updateBot(ctx *gin.Context) {
 		Version              string   `json:"version"`
 	}{}
 	if err := ctx.Bind(&body); err != nil { //validation error
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "message": "Validation Error."})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "message": "Validation Error.", "data": nil})
 	} else {
 		cred := credentials.NewStaticCredentials(os.Getenv("ACCESS_KEY_ID"), os.Getenv("SECRET_ACCESS_KEY"), "")
 		config := aws.NewConfig().WithCredentials(cred).WithRegion(os.Getenv("AWS_REGION"))
@@ -102,7 +104,7 @@ func updateBot(ctx *gin.Context) {
 		}
 		bot, err := svc.GetBot(input)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error."})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error.", "data": nil})
 		} else {
 			var messages []*lexmodelbuildingservice.Message
 			for _, val := range body.Messages {
@@ -125,7 +127,7 @@ func updateBot(ctx *gin.Context) {
 			}
 			result, err := svc.PutIntent(intent)
 			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error."})
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error.", "data": nil})
 			} else {
 				bot.Intents = append(bot.Intents, &lexmodelbuildingservice.Intent{IntentName: result.Name, IntentVersion: result.Version})
 				var clarificationPrompts []*lexmodelbuildingservice.Message
@@ -152,11 +154,31 @@ func updateBot(ctx *gin.Context) {
 					AbortStatement:      &lexmodelbuildingservice.Statement{Messages: abortMessages},
 				})
 				if err != nil {
-					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error."})
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error.", "data": nil})
 				} else {
-					ctx.JSON(http.StatusOK, gin.H{"error": nil, "message": "Bot Updated with new intent."})
+					ctx.JSON(http.StatusOK, gin.H{"error": nil, "message": "Bot Updated with new intent.", "data": nil})
 				}
 			}
 		}
+	}
+}
+
+//checkout the bot you made
+func chat(ctx *gin.Context) {
+	cred := credentials.NewStaticCredentials(os.Getenv("ACCESS_KEY_ID"), os.Getenv("SECRET_ACCESS_KEY"), "")
+	config := aws.NewConfig().WithCredentials(cred).WithRegion(os.Getenv("AWS_REGION"))
+	sess := session.Must(session.NewSession(config))
+	svc := lexruntimeservice.New(sess)
+	input := &lexruntimeservice.PostTextInput{
+		BotName:   aws.String(ctx.Query("bot_name")),
+		BotAlias:  aws.String(ctx.Query("bot_alias")),
+		InputText: aws.String(ctx.Query("message")),
+		UserId:    aws.String(ctx.Query("user_id")),
+	}
+	result, err := svc.PostText(input)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "message": "Server Error.", "data": nil})
+	} else {
+		ctx.JSON(http.StatusOK, gin.H{"error": nil, "message": "Bot Updated with new intent.", "data": result})
 	}
 }
